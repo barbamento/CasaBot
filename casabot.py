@@ -1,8 +1,10 @@
+from time import time
 from Barbagram.barbagram import button,telegram,keyboard,message
 import pandas as pd
 import numpy as np
 import os
 import polling2
+import datetime
 
 class casabot:
     def __init__(self):
@@ -37,6 +39,9 @@ class casabot:
                 api.append(text_file.read())
         return dict(zip([f[:-4] for f in paths],api))
 
+    def getUpdates_orTime(self,offset=None):
+        return self.bot.getUpdates(offset=offset),datetime.datetime
+
     def start_bot(self):
         stored_messages=self.bot.getUpdates()
         if stored_messages["result"]==[]:
@@ -44,25 +49,29 @@ class casabot:
         else:
             offset=stored_messages["result"][-1]["update_id"]
         idling=True
+        choices=["shopping list","reminders"]
         while idling:
-            incoming_message=polling2.poll(self.bot.getUpdates,args=([offset]),step=1,timeout=0)
+            incoming_message,time=polling2.poll(self.getUpdates_orTime,args=([offset]),step=1,timeout=0)
             if incoming_message["result"]!=[]:
                 offset=message(incoming_message).update_id+1
                 first_message=message(incoming_message)
-                if first_message.text=="shopping list":
+                if first_message.text in choices:
                     idling=False
                 else:
-                    initial_kb=keyboard(["shopping list"]).to_keyboard()
+                    initial_kb=keyboard(choices).to_keyboard()
                     self.bot.sendMessage(chat_id=first_message.chat_id,text="What do you want to do?",reply_markup=initial_kb)
-        idling=True
-        while idling:
-            incoming_message=polling2.poll(self.bot.getUpdates,args=([offset]),step=1,timeout=0)
-            if first_message.text=="shopping list":
-                self.shopping_list(first_message)
-                idling=False
+        if first_message.text=="shopping list":
+            self.shopping_list(first_message)
+        elif first_message.text=="reminders":
+            self.reminders(first_message)
+            
+    def reminders(self,message):
+        
+        
+        self.start_bot()
 
     def shopping_list(self,first_message):
-        choices=["add element to shopping list","clear the shopping list","go back"]
+        choices=["show shopping list","add element to shopping list","clear the shopping list","go back"]
         kb=keyboard(choices)
         self.bot.sendMessage(chat_id=first_message.chat_id,text="What do you want to do now?",reply_markup=kb.to_keyboard(orientation="vertical"))
         waiting_answer=True
@@ -72,8 +81,12 @@ class casabot:
             if answer["result"]!=[]:
                 answer=message(answer)
                 offset=answer.update_id+1
-                if answer.text in choices:
+                if answer.text in ["add element to shopping list","clear the shopping list","go back"]:
                     waiting_answer=False
+                elif answer.text=="show shopping list":
+                    shopper=self.load_shopping_list().index.to_list()
+                    shopper=str(shopper)[2:-2].replace("', '","\n")
+                    self.bot.sendMessage(chat_id=answer.chat_id,text=shopper)
         if answer.text=="add element to shopping list":
             self.add_item(answer)
         elif answer.text=="clear the shopping list":
@@ -95,7 +108,9 @@ class casabot:
                 if answer.text=="exit":
                     receveing_input=False
                 else:
-                    shopper.loc[answer.text,:]=[answer.chat_id]
+                    for i in answer.text.split("\n"):
+                        shopper.loc[i,:]=[answer.chat_id]
+                    self.bot.sendMessage(chat_id=old_answer.chat_id,text="ok")
                     shopper.to_csv(os.path.join(self.path["shopping list"],"shopping_list.csv"))
         self.shopping_list(answer)
 
